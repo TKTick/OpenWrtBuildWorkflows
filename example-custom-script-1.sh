@@ -26,7 +26,7 @@
 # # Uncomment a feed source:
 #sed -i 's/^#\(.*feed-name\)/\1/' feeds.conf.default
 # # Replace src-git-full with src-git to reduce the depth of cloning:
-#sed -i 's/src-git-full/src-git/g' feeds.conf.default
+sed -i 's/src-git-full/src-git/g' feeds.conf.default
 #
 # You can also modify the source code by patching.
 # # Here's a template for patching:
@@ -35,4 +35,6 @@
 #patch content
 #EOF
 #git apply example.patch
-
+#
+# # 修改 Lan 默认IP为192.168.2.1
+sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate
