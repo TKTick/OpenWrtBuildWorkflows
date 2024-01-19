@@ -14,7 +14,7 @@
 
 # Workflow name which is showed in GitHub Actions.
 # 显示在 GitHub Actions 中的工作流名称。
-name: immortalwrt-mt798x for 360T7-108M
+name: immortalwrt-mt798x for 360T7-108M Only
 
 on:
   workflow_dispatch:
@@ -76,7 +76,7 @@ env:
   # 以下是需要将固件传输到何处的选项。
   COWTRANSFER_FIRMWARE: false
   WETRANSFER_FIRMWARE: false
-  RELEASE_FIRMWARE: false
+  RELEASE_FIRMWARE: true
   
   # Change the following to your time zone.
   # 将以下内容更改为您的时区。

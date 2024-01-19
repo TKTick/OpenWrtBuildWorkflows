@@ -51,6 +51,7 @@ env:
   # CONFIG_FILE is the name of your own config files for compiling, you should upload these files into the root directory of your workflow repo.
   # CONFIG_FILE 是您自己用于编译的配置文件的名称，您应该将这些文件上传到工作流存储库的根目录中。
   CONFIG_FILE: config/360T7.config
+  CONFIG_FILE_2: config/360T7-108M.config
   
   # CUSTOM_SCRIPT_1 is the name of extra bash script you want to execute before feeds update&install.
   # CUSTOM_SCRIPT_2 is the name of extra bash script you want to execute after feeds update&install.
@@ -75,7 +76,7 @@ env:
   # 以下是需要将固件传输到何处的选项。
   COWTRANSFER_FIRMWARE: false
   WETRANSFER_FIRMWARE: false
-  RELEASE_FIRMWARE: false
+  RELEASE_FIRMWARE: true
   
   # Change the following to your time zone.
   # 将以下内容更改为您的时区。
@@ -188,6 +189,19 @@ jobs:
           echo "status=success" >> $GITHUB_OUTPUT
           grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
           [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
+      
+      # 复制CONFIG_FILE_2并编译
+      - name: Load custom configuration 2
+        run: |
+          [ -e $CONFIG_FILE_2 ] && mv $CONFIG_FILE_2 openwrt/.config
+
+      - name: Compile the firmware 2
+        id: compile_2
+        run: |
+          cd openwrt/
+          echo -e "$(nproc) thread compile"
+          make -j$(nproc) || make -j1 || make -j1 V=s
+          echo "status=success" >> $GITHUB_OUTPUT
           echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
 
       - name: Check space usage
@@ -196,7 +210,7 @@ jobs:
 
       - name: Upload all compilation products
         uses: actions/upload-artifact@main
-        if: steps.compile.outputs.status == 'success' && env.STORE_PRODUCTS == 'true'
+        if: steps.compile_2.outputs.status == 'success' && env.STORE_PRODUCTS == 'true'
         with:
           name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
           path: openwrt/bin/
