@@ -1,0 +1,309 @@
+# 显示在 GitHub Actions 中的工作流名称。
+name: ALL_Build 
+on:
+  workflow_dispatch:
+    inputs:
+      force-build:
+        description: "Build new firmware anyway"
+        required: false
+        default: "false"
+      ssh:
+        description: "SSH connection to Actions"
+        required: false
+        default: "false"
+        
+# 取消注释以下内容以定期运行。  请注意，此处的 cron 表达式不包含秒。
+#  schedule:
+#    - cron: 0 */18 * * * 
+
+env:
+  # REPO 表示您要在此工作流程中构建的 OpenWrt 存储库。 你可以将REPO_NAME修改为任何你想要的名字，但切记不要让其与其他工作流重名 
+  REPO_NAME: immortalwrt-mt798x
+  REPO_URL: https://github.com/hanwckf/immortalwrt-mt798x.git
+  REPO_BRANCH: openwrt-21.02
+  BUILD_DEPENDS:  "ack antlr3 aria2 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 \
+                   ccache clang cmake cpio curl device-tree-compiler fastjar file flex gawk gettext gcc-multilib \
+                   g++ g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libglib2.0-dev \
+                   libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev \
+                   libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full \
+                   patch pkgconf python2.7 python3 python3-distutils python3-pip libpython3-dev qemu-utils rsync \
+                   scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd \
+                   zlib1g-dev"
+
+  # CONFIG_FILE 是用于编译的配置文件
+  CONFIG_FILE: config/360T7.config
+  CONFIG_FILE_2: config/360T7-108M.config
+  CONFIG_FILE_3: config/RAX3000M.config
+  
+  # CUSTOM_SCRIPT_1 是在 feeds 更新和安装前执行的额外 bash 脚本
+  # CUSTOM_SCRIPT_2 是在 feeds 更新和安装后执行的额外 bash 脚本
+  # 您可以通过这两个脚本修改固件的初始设置
+  CUSTOM_SCRIPT_1: diy-part1.sh
+  CUSTOM_SCRIPT_2: diy-part2.sh
+  
+  # STORE_PRODUCTS 确定是否将所有编译产品上传到工作流工件。
+  # 不只是firmwires，所有编译过的包都会在这里，包括已编译但未固化为固件的包。
+  STORE_PRODUCTS: false
+  
+  # STORE_FIRMWARE 确定是否将固件上传到工作流程工件
+  STORE_FIRMWARE: true
+  
+  # 需要将固件传输到何处
+  RELEASE_FIRMWARE: true
+  
+  # 将以下内容更改为您的时区。
+  TIME_ZONE: Asia/Shanghai
+
+#-------------------------------------------------------------------------
+
+jobs:
+
+  # 检查源码是否存在更新
+  check:
+    name: Check for source code updates
+    runs-on: ubuntu-latest
+    outputs:
+      cache-hit: ${{ steps.cache-hash.outputs.cache-hit }}
+
+    steps:
+      - name: Get Commit Hash
+        id: get-hash
+        run: |
+          git clone --depth 1 --branch $REPO_BRANCH --single-branch $REPO_URL ./
+          echo "commit-hash=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Compare Commit Hash
+        id: cache-hash
+        uses: actions/cache@main
+        with:
+          path: .${{ env.REPO_NAME }}-${{ env.REPO_BRANCH }}-commit-hash
+          key: HEAD-${{ steps.get-hash.outputs.commit-hash }}
+
+      - name: Save New Commit Hash
+        if: steps.cache-hash.outputs.cache-hit != 'true'
+        run: |
+          echo ${{ steps.get-hash.outputs.commit-hash }} | 
+            tee .$REPO_NAME-$REPO_BRANCH-commit-hash
+  
+  # 构建编译环境并编译
+  build:
+    name: Build firmware
+    runs-on: ubuntu-latest
+    needs: check
+    permissions:
+      contents: write
+    if: needs.check.outputs.cache-hit != 'true' || github.event.inputs.force-build == 'true'
+
+    steps:
+      # 检查环境
+      - name: Checkout
+        uses: actions/checkout@main
+
+      # 初始化环境
+      - name: Initialization environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet/ /usr/local/lib/android/ /opt/ghc/
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install $BUILD_DEPENDS
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean
+          sudo timedatectl set-timezone $TIME_ZONE
+          sudo mkdir -p /workdir/
+          sudo chown $USER:$GROUPS /workdir/
+
+      # 拉取源码
+      - name: Clone source code
+        working-directory: /workdir
+        run: |
+          df -hT $PWD
+          git clone --depth 1 --branch $REPO_BRANCH --single-branch $REPO_URL openwrt/
+          ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+          author=$(git show -s --date=short --format="作者: %an")
+          date=$(git show -s --date=short --format="时间: %ci")
+          commit=$(git show -s --date=short --format="内容: %s")
+          hash=$(git show -s --date=short --format="hash: %H")
+          echo "author=$author" >> $GITHUB_ENV
+          echo "date=$date" >> $GITHUB_ENV
+          echo "commit=$commit" >> $GITHUB_ENV
+          echo "hash=$hash" >> $GITHUB_ENV
+
+      # 执行 custom-script-1 脚本
+      - name: Run custom-script-1
+        run: |
+          chmod +x $CUSTOM_SCRIPT_1
+          cd openwrt/
+          $GITHUB_WORKSPACE/$CUSTOM_SCRIPT_1
+
+      # 更新 feeds 源中的软件包
+      - name: Update feeds
+        run: cd openwrt/ && ./scripts/feeds update -a
+
+      # 安装 feeds 源中的软件包
+      - name: Install feeds
+        run: cd openwrt/ && ./scripts/feeds install -a
+ 
+      # 执行 custom-script-2 脚本
+      - name: Run custom-script-2
+        run: |
+          chmod +x $CUSTOM_SCRIPT_2
+          cd openwrt/
+          $GITHUB_WORKSPACE/$CUSTOM_SCRIPT_2
+
+      #-------------------------------------------------------------
+      # 复制 CONFIG_FILE 到根目录 固件-1
+      - name: Load custom configuration
+        run: |
+          [ -e files ] && mv files/ openwrt/files/
+          [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+
+      # 开放 SSH
+      - name: SSH connection to Actions
+        uses: P3TERX/ssh2actions@main
+        if: github.event.inputs.ssh == 'true' || contains(github.event.action, 'ssh')
+        env:
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+
+      # 下载编译所需软件包
+      - name: Download packages
+        id: download-packages
+        run: |
+          cd openwrt/
+          make defconfig
+          make download -j8
+          find dl -size -1024c -exec ls -l {} \;
+          find dl -size -1024c -exec rm -f {} \;
+
+      # 编译固件-1
+      - name: Compile the firmware
+        id: compile
+        run: |
+          cd openwrt/
+          echo -e "$(nproc) thread compile"
+          make -j$(nproc) || make -j1 || make -j1 V=s
+          echo "status=success" >> $GITHUB_OUTPUT
+        #  grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
+        #  [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
+      #-------------------------------------------------------------
+
+      #-------------------------------------------------------------
+      # 复制 CONFIG_FILE_2 并编译 固件-2
+      - name: Load custom configuration 2
+        run: |
+          [ -e $CONFIG_FILE_2 ] && mv $CONFIG_FILE_2 openwrt/.config
+
+      - name: Compile the firmware 2
+        id: compile_2
+        run: |
+          cd openwrt/
+          echo -e "$(nproc) thread compile"
+          make -j$(nproc) || make -j1 || make -j1 V=s
+          echo "status=success" >> $GITHUB_OUTPUT
+      #-------------------------------------------------------------
+
+      #-------------------------------------------------------------
+      # 复制 CONFIG_FILE_3 并编译 固件-3
+      - name: Load custom configuration 3
+        run: |
+          [ -e $CONFIG_FILE_3 ] && mv $CONFIG_FILE_3 openwrt/.config
+
+      - name: Compile the firmware 3
+        id: compile_3
+        run: |
+          cd openwrt/
+          echo -e "$(nproc) thread compile"
+          make -j$(nproc) || make -j1 || make -j1 V=s
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+      #-------------------------------------------------------------
+
+      # 检查空间
+      - name: Check space usage
+        if: (!cancelled())
+        run: df -hT
+
+      # 上传所有编译文件到工作流工件
+      - name: Upload all compilation products
+        uses: actions/upload-artifact@main
+        if: steps.compile_2.outputs.status == 'success' && env.STORE_PRODUCTS == 'true'
+        with:
+          name: OpenWrt_bin${{ env.FILE_DATE }}
+          path: openwrt/bin/
+
+      # 整理固件目录
+      - name: Organize firmware-related files
+        id: organize-files
+        run: |
+          cd openwrt/bin/targets/*/*
+          rm -rf packages/
+          rm -rf *.buildinfo
+          rm -rf sha256sums
+          rm -rf *.json
+          rm -rf *.manifest
+          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT
+
+      # 上传固件到工作流工件
+      - name: Upload firmware directory
+        uses: actions/upload-artifact@main
+        if: steps.organize-files.outputs.status == 'success' && env.STORE_FIRMWARE == 'true' && !cancelled()
+        with:
+          name: OpenWrt_firmware${{ env.FILE_DATE }}
+          path: ${{ env.FIRMWARE }}
+
+
+      # 生成发行版标签
+      - name: Generate release tag
+        id: tag
+        if: env.RELEASE_FIRMWARE == 'true' && !cancelled()
+        run: |
+          echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
+          touch release.txt
+          echo "云编译" >> release.txt
+          echo "### 📒 固件信息" >> release.txt
+          echo "- ⚽ 固件源码: ${{ env.REPO_URL }}" >> release.txt
+          echo "- 💝 源码分支: ${{ env.REPO_BRANCH }}" >> release.txt
+          echo "- 🌐 默认地址: 192.168.2.1" >> release.txt
+          echo "### 🧊 固件版本" >> release.txt
+          echo "- 固件编译前最后一次➦[主源码](${{ env.REPO_URL }})更新记录" >> release.txt
+          echo "- ${{ env.author }}" >> release.txt
+          echo "- ${{ env.date }}" >> release.txt
+          echo "- ${{ env.commit }}" >> release.txt
+          echo "- ${{ env.hash }}" >> release.txt
+
+          echo "status=success" >> $GITHUB_OUTPUT
+      
+      # 上传固件到发行版
+      - name: Upload firmware to release
+        uses: softprops/action-gh-release@master
+        if: steps.tag.outputs.status == 'success' && !cancelled()
+        with:
+          tag_name: ${{ steps.tag.outputs.release_tag }}
+          body_path: release.txt
+          files: ${{ env.FIRMWARE }}/*
+
+# 清理文件
+  clean:
+    name: Clean up old assets
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+
+    steps:
+      - name: Delete workflow runs
+        uses: Mattraks/delete-workflow-runs@main
+        with:
+          retain_days: 1
+          keep_minimum_runs: 1
+
+      - name: Remove old Releases
+        uses: dev-drprasad/delete-older-releases@master
+        if: env.RELEASE_FIRMWARE == 'true' && !cancelled()
+        with:
+          keep_latest: 3
+          delete_tags: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

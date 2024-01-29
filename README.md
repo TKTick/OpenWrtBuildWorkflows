@@ -10,6 +10,8 @@
 
 360T7-108M
 
+RAX3000M
+
 ## 鸣谢
 
 **[hanwckf/immortalwrt-mt798x](https://github.com/hanwckf/immortalwrt-mt798x)**
