@@ -185,7 +185,7 @@ jobs:
           cd openwrt/
           cp ${{ matrix.config_files }} .config
           echo -e "$(nproc) thread compile for ${{ matrix.config_files }}"
-          make -j$(nproc) || make -j1 || make -j1 V=s
+          sh -c 'make -j$(nproc) || make -j1 || make -j1 V=s'
 
       # 检查空间
       - name: Check space usage
