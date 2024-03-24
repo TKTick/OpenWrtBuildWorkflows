@@ -152,11 +152,12 @@ jobs:
           cd openwrt/
           $GITHUB_WORKSPACE/$CUSTOM_SCRIPT_2
 
-      # 复制 files/ 到 openwrt/files/
+      #-------------------------------------------------------------
+      # 复制 CONFIG_FILE 到根目录 固件-1
       - name: Load custom configuration
         run: |
           [ -e files ] && mv files/ openwrt/files/
-         # [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+          [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
 
       # 开放 SSH
       - name: SSH connection to Actions
@@ -176,16 +177,48 @@ jobs:
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
 
-      # 编译固件
-      - name: Compile firmwares
-        strategy:
-          matrix:
-            config_files: [ $CONFIG_FILE, $CONFIG_FILE_2, $CONFIG_FILE_3 ]
+      # 编译固件-1
+      - name: Compile the firmware
+        id: compile
         run: |
           cd openwrt/
-          cp ${{ matrix.config_files }} .config
-          echo -e "$(nproc) thread compile for ${{ matrix.config_files }}"
+          echo -e "$(nproc) thread compile"
           make -j$(nproc) || make -j1 || make -j1 V=s
+          echo "status=success" >> $GITHUB_OUTPUT
+        #  grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
+        #  [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
+      #-------------------------------------------------------------
+
+      #-------------------------------------------------------------
+      # 复制 CONFIG_FILE_2 并编译 固件-2
+      - name: Load custom configuration 2
+        run: |
+          [ -e $CONFIG_FILE_2 ] && mv $CONFIG_FILE_2 openwrt/.config
+
+      - name: Compile the firmware 2
+        id: compile_2
+        run: |
+          cd openwrt/
+          echo -e "$(nproc) thread compile"
+          make -j$(nproc) || make -j1 || make -j1 V=s
+          echo "status=success" >> $GITHUB_OUTPUT
+      #-------------------------------------------------------------
+
+      #-------------------------------------------------------------
+      # 复制 CONFIG_FILE_3 并编译 固件-3
+      - name: Load custom configuration 3
+        run: |
+          [ -e $CONFIG_FILE_3 ] && mv $CONFIG_FILE_3 openwrt/.config
+
+      - name: Compile the firmware 3
+        id: compile_3
+        run: |
+          cd openwrt/
+          echo -e "$(nproc) thread compile"
+          make -j$(nproc) || make -j1 || make -j1 V=s
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+      #-------------------------------------------------------------
 
       # 检查空间
       - name: Check space usage
