@@ -93,7 +93,9 @@ jobs:
     permissions:
       contents: write
     if: needs.check.outputs.cache-hit != 'true' || github.event.inputs.force-build == 'true'
-
+    strategy:
+      matrix:
+        config_files: [ $CONFIG_FILE, $CONFIG_FILE_2, $CONFIG_FILE_3 ]
     steps:
       # 检查环境
       - name: Checkout
@@ -178,10 +180,6 @@ jobs:
 
       # 编译固件
       - name: Compile firmwares
-        strategy:
-          matrix:
-            config_files: [ $CONFIG_FILE, $CONFIG_FILE_2, $CONFIG_FILE_3 ]
-        runs-on: ubuntu-latest 
         run: |
           cd openwrt/
           cp ${{ matrix.config_files }} .config
