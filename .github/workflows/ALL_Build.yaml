@@ -152,12 +152,6 @@ jobs:
           cd openwrt/
           $GITHUB_WORKSPACE/$CUSTOM_SCRIPT_2
 
-      # 复制 files/ 到 openwrt/files/
-      - name: Load custom configuration
-        run: |
-          [ -e files ] && mv files/ openwrt/files/
-         # [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-
       # 开放 SSH
       - name: SSH connection to Actions
         uses: P3TERX/ssh2actions@main
@@ -178,14 +172,20 @@ jobs:
 
       # 编译固件
       - name: Compile firmwares
-        strategy:
-          matrix:
-            config_files: [ $CONFIG_FILE, $CONFIG_FILE_2, $CONFIG_FILE_3 ]
         run: |
           cd openwrt/
-          cp ${{ matrix.config_files }} .config
-          echo -e "$(nproc) thread compile for ${{ matrix.config_files }}"
-          make -j$(nproc) || make -j1 || make -j1 V=s
+          [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+          sh -c 'make -j$(nproc) || make -j1 || make -j1 V=s'
+      # 编译固件-2
+      - name: Compile firmwares-2
+        run: |
+          [ -e $CONFIG_FILE_2 ] && mv $CONFIG_FILE_2 openwrt/.config
+          sh -c 'make -j$(nproc) || make -j1 || make -j1 V=s'
+      # 编译固件-3
+      - name: Compile firmwares-3
+        run: |
+          [ -e $CONFIG_FILE_3 ] && mv $CONFIG_FILE_3 openwrt/.config
+          sh -c 'make -j$(nproc) || make -j1 || make -j1 V=s'
 
       # 检查空间
       - name: Check space usage
