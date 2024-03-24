@@ -154,12 +154,6 @@ jobs:
           cd openwrt/
           $GITHUB_WORKSPACE/$CUSTOM_SCRIPT_2
 
-      # 复制 files/ 到 openwrt/files/
-      - name: Load custom configuration
-        run: |
-          [ -e files ] && mv files/ openwrt/files/
-         # [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-
       # 开放 SSH
       - name: SSH connection to Actions
         uses: P3TERX/ssh2actions@main
